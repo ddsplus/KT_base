@@ -85,12 +85,9 @@ def main(model_name, dataset_name):
     train_size = int(len(dataset) * train_ratio)
     test_size = len(dataset) - train_size
 
-    # create a generator consistent with the device to avoid device-mismatch
-    # issues in random_split when using CUDA
-    try:
-        gen = torch.Generator(device=device).manual_seed(42)
-    except Exception:
-        gen = torch.Generator().manual_seed(42)
+    # create a generator for random_split; generator must be on CPU
+    # since DataLoader sampler operates on CPU despite model using CUDA
+    gen = torch.Generator().manual_seed(42)
 
     train_dataset, test_dataset = random_split(
         dataset, [train_size, test_size], generator=gen
