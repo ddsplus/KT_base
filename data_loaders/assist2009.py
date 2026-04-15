@@ -55,7 +55,8 @@ class ASSIST2009(Dataset):
         return self.len
 
     def preprocess(self):
-        df = pd.read_csv(self.dataset_path).dropna(subset=["skill_name"])\
+        # some ASSIST2009 csv files contain non-UTF-8 bytes; use latin1 encoding
+        df = pd.read_csv(self.dataset_path, encoding="latin1").dropna(subset=["skill_name"])\
             .drop_duplicates(subset=["order_id", "skill_name"])\
             .sort_values(by=["order_id"])
 
