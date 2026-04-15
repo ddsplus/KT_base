@@ -137,3 +137,6 @@ datasets
 
 # custom files
 *.ipynb
+
+# Ignore assets folder
+assets/
