@@ -3,9 +3,10 @@ import argparse
 import json
 import pickle
 
+import numpy as np
 import torch
 
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, Subset
 from torch.optim import SGD, Adam
 
 from data_loaders.assist2009 import ASSIST2009
@@ -85,32 +86,39 @@ def main(model_name, dataset_name):
     train_size = int(len(dataset) * train_ratio)
     test_size = len(dataset) - train_size
 
-    # split dataset on CPU (no CUDA context interference)
-    train_dataset, test_dataset = random_split(
-        dataset, [train_size, test_size]
-    )
-
-    # now move model to target device after random_split is complete
-    model = model.to(target_device)
-
+    # load pre-split indices if they exist, else generate with fixed seed
     if os.path.exists(os.path.join(dataset.dataset_dir, "train_indices.pkl")):
         with open(
             os.path.join(dataset.dataset_dir, "train_indices.pkl"), "rb"
         ) as f:
-            train_dataset.indices = pickle.load(f)
+            train_indices = pickle.load(f)
         with open(
             os.path.join(dataset.dataset_dir, "test_indices.pkl"), "rb"
         ) as f:
-            test_dataset.indices = pickle.load(f)
+            test_indices = pickle.load(f)
     else:
+        # use fixed random seed to generate indices for reproducibility
+        np.random.seed(42)
+        indices = np.random.permutation(len(dataset))
+        train_indices = indices[:train_size]
+        test_indices = indices[train_size:]
+
+        # save indices for reproducibility
         with open(
             os.path.join(dataset.dataset_dir, "train_indices.pkl"), "wb"
         ) as f:
-            pickle.dump(train_dataset.indices, f)
+            pickle.dump(train_indices, f)
         with open(
             os.path.join(dataset.dataset_dir, "test_indices.pkl"), "wb"
         ) as f:
-            pickle.dump(test_dataset.indices, f)
+            pickle.dump(test_indices, f)
+
+    # split dataset using Subset (no CUDA context issues)
+    train_dataset = Subset(dataset, train_indices)
+    test_dataset = Subset(dataset, test_indices)
+
+    # now move model to target device after splitting is complete
+    model = model.to(target_device)
 
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,

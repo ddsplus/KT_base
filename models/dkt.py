@@ -57,6 +57,9 @@ class DKT(Module):
                 opt: the optimization to train this model
                 ckpt_path: the path to save this model's parameters
         '''
+        # infer device from model parameters
+        device = next(self.parameters()).device
+
         aucs = []
         loss_means = []
 
@@ -67,6 +70,12 @@ class DKT(Module):
 
             for data in train_loader:
                 q, r, qshft, rshft, m = data
+                # move all tensors to model's device
+                q = q.to(device)
+                r = r.to(device)
+                qshft = qshft.to(device)
+                rshft = rshft.to(device)
+                m = m.to(device)
 
                 self.train()
 
@@ -86,6 +95,12 @@ class DKT(Module):
             with torch.no_grad():
                 for data in test_loader:
                     q, r, qshft, rshft, m = data
+                    # move all tensors to model's device
+                    q = q.to(device)
+                    r = r.to(device)
+                    qshft = qshft.to(device)
+                    rshft = rshft.to(device)
+                    m = m.to(device)
 
                     self.eval()
 
