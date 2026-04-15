@@ -53,9 +53,8 @@ def main(model_name, dataset_name):
     elif dataset_name == "Statics2011":
         dataset = Statics2011(seq_len)
 
-    # choose device: prefer cuda:0 when available
+    # determine device but delay torch.cuda.set_device until after random_split
     if torch.cuda.is_available():
-        torch.cuda.set_device(0)
         device = torch.device("cuda:0")
     else:
         device = torch.device("cpu")
@@ -89,6 +88,10 @@ def main(model_name, dataset_name):
     train_dataset, test_dataset = random_split(
         dataset, [train_size, test_size]
     )
+
+    # set CUDA device after random_split to avoid device mismatch issues
+    if torch.cuda.is_available():
+        torch.cuda.set_device(0)
 
     if os.path.exists(os.path.join(dataset.dataset_dir, "train_indices.pkl")):
         with open(
