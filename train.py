@@ -53,10 +53,12 @@ def main(model_name, dataset_name):
     elif dataset_name == "Statics2011":
         dataset = Statics2011(seq_len)
 
+    # choose device: prefer cuda:0 when available
     if torch.cuda.is_available():
-        device = "cuda"
+        torch.cuda.set_device(0)
+        device = torch.device("cuda:0")
     else:
-        device = "cpu"
+        device = torch.device("cpu")
 
     with open(os.path.join(ckpt_path, "model_config.json"), "w") as f:
         json.dump(model_config, f, indent=4)
@@ -83,8 +85,15 @@ def main(model_name, dataset_name):
     train_size = int(len(dataset) * train_ratio)
     test_size = len(dataset) - train_size
 
+    # create a generator consistent with the device to avoid device-mismatch
+    # issues in random_split when using CUDA
+    try:
+        gen = torch.Generator(device=device).manual_seed(42)
+    except Exception:
+        gen = torch.Generator().manual_seed(42)
+
     train_dataset, test_dataset = random_split(
-        dataset, [train_size, test_size]
+        dataset, [train_size, test_size], generator=gen
     )
 
     if os.path.exists(os.path.join(dataset.dataset_dir, "train_indices.pkl")):
