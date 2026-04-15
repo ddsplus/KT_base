@@ -53,30 +53,31 @@ def main(model_name, dataset_name):
     elif dataset_name == "Statics2011":
         dataset = Statics2011(seq_len)
 
-    # determine device but delay torch.cuda.set_device until after random_split
+    # determine target device for model training
     if torch.cuda.is_available():
-        device = torch.device("cuda:0")
+        target_device = torch.device("cuda:0")
     else:
-        device = torch.device("cpu")
+        target_device = torch.device("cpu")
 
     with open(os.path.join(ckpt_path, "model_config.json"), "w") as f:
         json.dump(model_config, f, indent=4)
     with open(os.path.join(ckpt_path, "train_config.json"), "w") as f:
         json.dump(train_config, f, indent=4)
 
+    # create model on CPU first to avoid CUDA context issues
     if model_name == "dkt":
-        model = DKT(dataset.num_q, **model_config).to(device)
+        model = DKT(dataset.num_q, **model_config)
     elif model_name == "dkt+":
-        model = DKTPlus(dataset.num_q, **model_config).to(device)
+        model = DKTPlus(dataset.num_q, **model_config)
     elif model_name == "dkvmn":
-        model = DKVMN(dataset.num_q, **model_config).to(device)
+        model = DKVMN(dataset.num_q, **model_config)
     elif model_name == "sakt":
-        model = SAKT(dataset.num_q, **model_config).to(device)
+        model = SAKT(dataset.num_q, **model_config)
     elif model_name == "gkt":
         if model_config["method"] == "PAM":
-            model = PAM(dataset.num_q, **model_config).to(device)
+            model = PAM(dataset.num_q, **model_config)
         elif model_config["method"] == "MHA":
-            model = MHA(dataset.num_q, **model_config).to(device)
+            model = MHA(dataset.num_q, **model_config)
     else:
         print("The wrong model name was used...")
         return
@@ -84,14 +85,13 @@ def main(model_name, dataset_name):
     train_size = int(len(dataset) * train_ratio)
     test_size = len(dataset) - train_size
 
-    # split dataset on CPU; model will be moved to device (cuda:0) for training
+    # split dataset on CPU (no CUDA context interference)
     train_dataset, test_dataset = random_split(
         dataset, [train_size, test_size]
     )
 
-    # set CUDA device after random_split to avoid device mismatch issues
-    if torch.cuda.is_available():
-        torch.cuda.set_device(0)
+    # now move model to target device after random_split is complete
+    model = model.to(target_device)
 
     if os.path.exists(os.path.join(dataset.dataset_dir, "train_indices.pkl")):
         with open(
