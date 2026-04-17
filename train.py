@@ -187,11 +187,11 @@ def main(model_name, dataset_name, subdata_dir=None):
 
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_fn
+        collate_fn=collate_fn, generator=torch.Generator(device="cpu")
     )
     test_loader = DataLoader(
         test_dataset, batch_size=test_size, shuffle=True,
-        collate_fn=collate_fn
+        collate_fn=collate_fn, generator=torch.Generator(device="cpu")
     )
 
     if optimizer == "sgd":
