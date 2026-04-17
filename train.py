@@ -3,10 +3,9 @@ import argparse
 import json
 import pickle
 
-import numpy as np
 import torch
 
-from torch.utils.data import DataLoader, random_split, Subset
+from torch.utils.data import DataLoader, random_split
 from torch.optim import SGD, Adam
 
 from data_loaders.assist2009 import ASSIST2009
@@ -54,38 +53,29 @@ def main(model_name, dataset_name):
     elif dataset_name == "Statics2011":
         dataset = Statics2011(seq_len)
 
-    # normalize model name for class selection (support alias 'saint' -> 'sakt')
-    model_class_name = model_name
-    if model_name == "saint":
-        model_class_name = "sakt"
-
-    # determine target device for model training
-    # SAKT builds an attention mask tensor on CPU inside forward,
-    # so keep it on CPU unless model implementation is updated.
-    if torch.cuda.is_available() and model_class_name != "sakt":
-        target_device = torch.device("cuda:0")
+    if torch.cuda.is_available():
+        device = "cuda"
     else:
-        target_device = torch.device("cpu")
+        device = "cpu"
 
     with open(os.path.join(ckpt_path, "model_config.json"), "w") as f:
         json.dump(model_config, f, indent=4)
     with open(os.path.join(ckpt_path, "train_config.json"), "w") as f:
         json.dump(train_config, f, indent=4)
 
-    # create model on CPU first to avoid CUDA context issues
-    if model_class_name == "dkt":
-        model = DKT(dataset.num_q, **model_config)
-    elif model_class_name == "dkt+":
-        model = DKTPlus(dataset.num_q, **model_config)
-    elif model_class_name == "dkvmn":
-        model = DKVMN(dataset.num_q, **model_config)
-    elif model_class_name == "sakt":
-        model = SAKT(dataset.num_q, **model_config)
-    elif model_class_name == "gkt":
+    if model_name == "dkt":
+        model = DKT(dataset.num_q, **model_config).to(device)
+    elif model_name == "dkt+":
+        model = DKTPlus(dataset.num_q, **model_config).to(device)
+    elif model_name == "dkvmn":
+        model = DKVMN(dataset.num_q, **model_config).to(device)
+    elif model_name == "sakt":
+        model = SAKT(dataset.num_q, **model_config).to(device)
+    elif model_name == "gkt":
         if model_config["method"] == "PAM":
-            model = PAM(dataset.num_q, **model_config)
+            model = PAM(dataset.num_q, **model_config).to(device)
         elif model_config["method"] == "MHA":
-            model = MHA(dataset.num_q, **model_config)
+            model = MHA(dataset.num_q, **model_config).to(device)
     else:
         print("The wrong model name was used...")
         return
@@ -93,55 +83,36 @@ def main(model_name, dataset_name):
     train_size = int(len(dataset) * train_ratio)
     test_size = len(dataset) - train_size
 
-    # load pre-split indices if they exist, else generate with fixed seed
+    train_dataset, test_dataset = random_split(
+        dataset, [train_size, test_size]
+    )
+
     if os.path.exists(os.path.join(dataset.dataset_dir, "train_indices.pkl")):
         with open(
             os.path.join(dataset.dataset_dir, "train_indices.pkl"), "rb"
         ) as f:
-            train_indices = pickle.load(f)
+            train_dataset.indices = pickle.load(f)
         with open(
             os.path.join(dataset.dataset_dir, "test_indices.pkl"), "rb"
         ) as f:
-            test_indices = pickle.load(f)
+            test_dataset.indices = pickle.load(f)
     else:
-        # use fixed random seed to generate indices for reproducibility
-        np.random.seed(42)
-        indices = np.random.permutation(len(dataset))
-        train_indices = indices[:train_size]
-        test_indices = indices[train_size:]
-
-        # save indices for reproducibility
         with open(
             os.path.join(dataset.dataset_dir, "train_indices.pkl"), "wb"
         ) as f:
-            pickle.dump(train_indices, f)
+            pickle.dump(train_dataset.indices, f)
         with open(
             os.path.join(dataset.dataset_dir, "test_indices.pkl"), "wb"
         ) as f:
-            pickle.dump(test_indices, f)
-
-    # split dataset using Subset (no CUDA context issues)
-    train_dataset = Subset(dataset, train_indices)
-    test_dataset = Subset(dataset, test_indices)
-
-    # now move model to target device after splitting is complete
-    model = model.to(target_device)
-
-    # print useful startup info for debugging
-    print("dataset.num_q:", dataset.num_q)
-    print("target_device:", target_device)
-
-    def collate_fn_on_device(batch):
-        # Ensure every tensor in a batch is on the same device as the model.
-        return tuple(t.to(target_device) for t in collate_fn(batch))
+            pickle.dump(test_dataset.indices, f)
 
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_fn_on_device
+        collate_fn=collate_fn
     )
     test_loader = DataLoader(
         test_dataset, batch_size=test_size, shuffle=True,
-        collate_fn=collate_fn_on_device
+        collate_fn=collate_fn
     )
 
     if optimizer == "sgd":

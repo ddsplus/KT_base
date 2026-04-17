@@ -3,8 +3,11 @@ import torch
 
 from torch.nn.utils.rnn import pad_sequence
 
-# do NOT set global default tensor type to CUDA
-# this should be handled explicitly in train.py when moving models to device
+if torch.cuda.is_available():
+    from torch.cuda import FloatTensor
+    torch.set_default_tensor_type(torch.cuda.FloatTensor)
+else:
+    from torch import FloatTensor
 
 
 def match_seq_len(q_seqs, r_seqs, seq_len, pad_val=-1):
@@ -85,10 +88,10 @@ def collate_fn(batch, pad_val=-1):
     rshft_seqs = []
 
     for q_seq, r_seq in batch:
-        q_seqs.append(torch.FloatTensor(q_seq[:-1]))
-        r_seqs.append(torch.FloatTensor(r_seq[:-1]))
-        qshft_seqs.append(torch.FloatTensor(q_seq[1:]))
-        rshft_seqs.append(torch.FloatTensor(r_seq[1:]))
+        q_seqs.append(FloatTensor(q_seq[:-1]))
+        r_seqs.append(FloatTensor(r_seq[:-1]))
+        qshft_seqs.append(FloatTensor(q_seq[1:]))
+        rshft_seqs.append(FloatTensor(r_seq[1:]))
 
     q_seqs = pad_sequence(
         q_seqs, batch_first=True, padding_value=pad_val

@@ -10,7 +10,7 @@ from torch.utils.data import Dataset
 from models.utils import match_seq_len
 
 
-DATASET_DIR = "assets/"
+DATASET_DIR = "datasets/ASSIST2009/"
 
 
 class ASSIST2009(Dataset):
@@ -55,8 +55,7 @@ class ASSIST2009(Dataset):
         return self.len
 
     def preprocess(self):
-        # some ASSIST2009 csv files contain non-UTF-8 bytes; use latin1 encoding
-        df = pd.read_csv(self.dataset_path, encoding="latin1").dropna(subset=["skill_name"])\
+        df = pd.read_csv(self.dataset_path).dropna(subset=["skill_name"])\
             .drop_duplicates(subset=["order_id", "skill_name"])\
             .sort_values(by=["order_id"])
 

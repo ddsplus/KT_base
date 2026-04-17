@@ -148,27 +148,11 @@ class GKT(Module):
 
             for data in train_loader:
                 q, r, qshft, rshft, m = data
-                # guard against out-of-range indices in qshft
-                qshft = qshft.long().clamp(0, self.num_q - 1)
 
                 self.train()
 
                 y, _ = self(q.long(), r.long())
-
-                # ensure qshft indices safe and build one_hot
-                qshft = qshft.long().clamp(0, self.num_q - 1)
-                qshft_onehot = one_hot(qshft, self.num_q)
-
-                # debug/repair: y's last dim should equal self.num_q
-                if y.shape[-1] != self.num_q:
-                    print(f"[WARN] y.shape={y.shape}, expected last dim={self.num_q}")
-                    if y.shape[-1] < self.num_q:
-                        pad_size = self.num_q - y.shape[-1]
-                        y = torch.nn.functional.pad(y, (0, pad_size))
-                    else:
-                        y = y[..., :self.num_q]
-
-                y = (y * qshft_onehot).sum(-1)
+                y = (y * one_hot(qshft.long(), self.num_q)).sum(-1)
 
                 y = torch.masked_select(y, m)
                 t = torch.masked_select(rshft, m)
@@ -183,27 +167,11 @@ class GKT(Module):
             with torch.no_grad():
                 for data in test_loader:
                     q, r, qshft, rshft, m = data
-                    # guard against out-of-range indices in qshft
-                    qshft = qshft.long().clamp(0, self.num_q - 1)
 
                     self.eval()
 
                     y, _ = self(q.long(), r.long())
-
-                    # ensure qshft indices safe and build one_hot
-                    qshft = qshft.long().clamp(0, self.num_q - 1)
-                    qshft_onehot = one_hot(qshft, self.num_q)
-
-                    # debug/repair: y's last dim should equal self.num_q
-                    if y.shape[-1] != self.num_q:
-                        print(f"[WARN] y.shape={y.shape}, expected last dim={self.num_q}")
-                        if y.shape[-1] < self.num_q:
-                            pad_size = self.num_q - y.shape[-1]
-                            y = torch.nn.functional.pad(y, (0, pad_size))
-                        else:
-                            y = y[..., :self.num_q]
-
-                    y = (y * qshft_onehot).sum(-1)
+                    y = (y * one_hot(qshft.long(), self.num_q)).sum(-1)
 
                     y = torch.masked_select(y, m).detach().cpu()
                     t = torch.masked_select(rshft, m).detach().cpu()
