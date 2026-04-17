@@ -7,7 +7,7 @@ import torch
 import random
 import numpy as np
 
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, Subset
 from torch.optim import SGD, Adam
 
 from data_loaders.assist2009 import ASSIST2009
@@ -54,6 +54,22 @@ def _create_subdata_pickles(dataset_dir, seq_len, num_users=200, num_q=100):
         pickle.dump(q2idx, f)
     with open(os.path.join(dataset_dir, "u2idx.pkl"), "wb") as f:
         pickle.dump(u2idx, f)
+
+
+def cpu_random_split(dataset, lengths, seed=42):
+    """Split dataset indices on CPU using numpy RNG to avoid CUDA generator mismatch."""
+    total = sum(lengths)
+    rng = np.random.RandomState(seed)
+    perm = rng.permutation(total).tolist()
+
+    subsets = []
+    offset = 0
+    for l in lengths:
+        idxs = perm[offset: offset + l]
+        subsets.append(Subset(dataset, idxs))
+        offset += l
+
+    return subsets
 
 
 def main(model_name, dataset_name, subdata_dir=None):
@@ -147,10 +163,8 @@ def main(model_name, dataset_name, subdata_dir=None):
     train_size = int(len(dataset) * train_ratio)
     test_size = len(dataset) - train_size
 
-    # ensure splitting uses CPU generator
-    gen = torch.Generator(device="cpu")
-    gen.manual_seed(42)
-    train_dataset, test_dataset = random_split(dataset, [train_size, test_size], generator=gen)
+    # perform splitting on CPU using numpy RNG to avoid CUDA generator/device mismatch
+    train_dataset, test_dataset = cpu_random_split(dataset, [train_size, test_size], seed=42)
 
     if os.path.exists(os.path.join(dataset.dataset_dir, "train_indices.pkl")):
         with open(
