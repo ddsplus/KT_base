@@ -148,6 +148,8 @@ class GKT(Module):
 
             for data in train_loader:
                 q, r, qshft, rshft, m = data
+                # guard against out-of-range indices in qshft
+                qshft = qshft.long().clamp(0, self.num_q - 1)
 
                 self.train()
 
@@ -167,6 +169,8 @@ class GKT(Module):
             with torch.no_grad():
                 for data in test_loader:
                     q, r, qshft, rshft, m = data
+                    # guard against out-of-range indices in qshft
+                    qshft = qshft.long().clamp(0, self.num_q - 1)
 
                     self.eval()
 

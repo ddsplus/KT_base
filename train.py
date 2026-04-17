@@ -54,10 +54,15 @@ def main(model_name, dataset_name):
     elif dataset_name == "Statics2011":
         dataset = Statics2011(seq_len)
 
+    # normalize model name for class selection (support alias 'saint' -> 'sakt')
+    model_class_name = model_name
+    if model_name == "saint":
+        model_class_name = "sakt"
+
     # determine target device for model training
     # SAKT builds an attention mask tensor on CPU inside forward,
     # so keep it on CPU unless model implementation is updated.
-    if torch.cuda.is_available() and model_name != "sakt":
+    if torch.cuda.is_available() and model_class_name != "sakt":
         target_device = torch.device("cuda:0")
     else:
         target_device = torch.device("cpu")
@@ -68,15 +73,15 @@ def main(model_name, dataset_name):
         json.dump(train_config, f, indent=4)
 
     # create model on CPU first to avoid CUDA context issues
-    if model_name == "dkt":
+    if model_class_name == "dkt":
         model = DKT(dataset.num_q, **model_config)
-    elif model_name == "dkt+":
+    elif model_class_name == "dkt+":
         model = DKTPlus(dataset.num_q, **model_config)
-    elif model_name == "dkvmn":
+    elif model_class_name == "dkvmn":
         model = DKVMN(dataset.num_q, **model_config)
-    elif model_name == "sakt":
+    elif model_class_name == "sakt":
         model = SAKT(dataset.num_q, **model_config)
-    elif model_name == "gkt":
+    elif model_class_name == "gkt":
         if model_config["method"] == "PAM":
             model = PAM(dataset.num_q, **model_config)
         elif model_config["method"] == "MHA":
@@ -121,6 +126,10 @@ def main(model_name, dataset_name):
 
     # now move model to target device after splitting is complete
     model = model.to(target_device)
+
+    # print useful startup info for debugging
+    print("dataset.num_q:", dataset.num_q)
+    print("target_device:", target_device)
 
     def collate_fn_on_device(batch):
         # Ensure every tensor in a batch is on the same device as the model.
