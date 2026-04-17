@@ -185,13 +185,15 @@ def main(model_name, dataset_name, subdata_dir=None):
         ) as f:
             pickle.dump(test_dataset.indices, f)
 
+    # DataLoader generator must match tensor device type to avoid random_ generator mismatch
+    gen_device = device.type if isinstance(device, torch.device) else str(device)
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_fn, generator=torch.Generator(device="cpu")
+        collate_fn=collate_fn, generator=torch.Generator(device=gen_device)
     )
     test_loader = DataLoader(
         test_dataset, batch_size=test_size, shuffle=True,
-        collate_fn=collate_fn, generator=torch.Generator(device="cpu")
+        collate_fn=collate_fn, generator=torch.Generator(device=gen_device)
     )
 
     if optimizer == "sgd":
