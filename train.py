@@ -4,6 +4,8 @@ import json
 import pickle
 
 import torch
+import random
+import numpy as np
 
 from torch.utils.data import DataLoader, random_split
 from torch.optim import SGD, Adam
@@ -20,7 +22,41 @@ from models.gkt import PAM, MHA
 from models.utils import collate_fn
 
 
-def main(model_name, dataset_name):
+def _create_subdata_pickles(dataset_dir, seq_len, num_users=200, num_q=100):
+    os.makedirs(dataset_dir, exist_ok=True)
+
+    q_list = np.arange(num_q)
+    u_list = np.arange(num_users)
+
+    q_seqs = []
+    r_seqs = []
+
+    for _ in range(num_users):
+        L = random.randint(5, max(6, seq_len // 2))
+        q_seq = np.random.randint(0, num_q, size=L)
+        r_seq = np.random.binomial(1, 0.5, size=L)
+
+        q_seqs.append(q_seq)
+        r_seqs.append(r_seq)
+
+    q2idx = {int(q): int(i) for i, q in enumerate(q_list)}
+    u2idx = {int(u): int(i) for i, u in enumerate(u_list)}
+
+    with open(os.path.join(dataset_dir, "q_seqs.pkl"), "wb") as f:
+        pickle.dump(q_seqs, f)
+    with open(os.path.join(dataset_dir, "r_seqs.pkl"), "wb") as f:
+        pickle.dump(r_seqs, f)
+    with open(os.path.join(dataset_dir, "q_list.pkl"), "wb") as f:
+        pickle.dump(q_list, f)
+    with open(os.path.join(dataset_dir, "u_list.pkl"), "wb") as f:
+        pickle.dump(u_list, f)
+    with open(os.path.join(dataset_dir, "q2idx.pkl"), "wb") as f:
+        pickle.dump(q2idx, f)
+    with open(os.path.join(dataset_dir, "u2idx.pkl"), "wb") as f:
+        pickle.dump(u2idx, f)
+
+
+def main(model_name, dataset_name, subdata_dir=None):
     if not os.path.isdir("ckpts"):
         os.mkdir("ckpts")
 
@@ -44,19 +80,47 @@ def main(model_name, dataset_name):
     optimizer = train_config["optimizer"]  # can be [sgd, adam]
     seq_len = train_config["seq_len"]
 
-    if dataset_name == "ASSIST2009":
-        dataset = ASSIST2009(seq_len)
-    elif dataset_name == "ASSIST2015":
-        dataset = ASSIST2015(seq_len)
-    elif dataset_name == "Algebra2005":
-        dataset = Algebra2005(seq_len)
-    elif dataset_name == "Statics2011":
-        dataset = Statics2011(seq_len)
-
-    if torch.cuda.is_available():
-        device = "cuda"
+    # prefer explicit subdata directory if provided, otherwise try ./subdata/<dataset_name>
+    dataset_dir_arg = None
+    if subdata_dir:
+        # allow passing either a root that contains dataset dirs or a dataset-specific path
+        candidate = os.path.join(subdata_dir, dataset_name)
+        if os.path.isdir(candidate):
+            dataset_dir_arg = candidate
+        elif os.path.isdir(subdata_dir):
+            dataset_dir_arg = subdata_dir
     else:
-        device = "cpu"
+        candidate = os.path.join("subdata", dataset_name)
+        if os.path.isdir(candidate):
+            dataset_dir_arg = candidate
+
+    # instantiate dataset, with fallback to creating minimal subdata pickles when files missing
+    try:
+        if dataset_name == "ASSIST2009":
+            dataset = ASSIST2009(seq_len, dataset_dir=dataset_dir_arg) if dataset_dir_arg else ASSIST2009(seq_len)
+        elif dataset_name == "ASSIST2015":
+            dataset = ASSIST2015(seq_len, dataset_dir=dataset_dir_arg) if dataset_dir_arg else ASSIST2015(seq_len)
+        elif dataset_name == "Algebra2005":
+            dataset = Algebra2005(seq_len, dataset_dir=dataset_dir_arg) if dataset_dir_arg else Algebra2005(seq_len)
+        elif dataset_name == "Statics2011":
+            dataset = Statics2011(seq_len, datset_dir=dataset_dir_arg) if dataset_dir_arg else Statics2011(seq_len)
+    except FileNotFoundError:
+        # create tiny synthetic subdata on disk and retry (split/indexing will be done on CPU)
+        fallback_dir = os.path.join("subdata", dataset_name)
+        print(f"Dataset files not found. Creating fallback subdata at {fallback_dir}")
+        _create_subdata_pickles(fallback_dir, seq_len)
+
+        if dataset_name == "ASSIST2009":
+            dataset = ASSIST2009(seq_len, dataset_dir=fallback_dir)
+        elif dataset_name == "ASSIST2015":
+            dataset = ASSIST2015(seq_len, dataset_dir=fallback_dir)
+        elif dataset_name == "Algebra2005":
+            dataset = Algebra2005(seq_len, dataset_dir=fallback_dir)
+        elif dataset_name == "Statics2011":
+            dataset = Statics2011(seq_len, datset_dir=fallback_dir)
+
+    # use CPU for data split operations, train on cuda:0 if available
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     with open(os.path.join(ckpt_path, "model_config.json"), "w") as f:
         json.dump(model_config, f, indent=4)
@@ -83,9 +147,10 @@ def main(model_name, dataset_name):
     train_size = int(len(dataset) * train_ratio)
     test_size = len(dataset) - train_size
 
-    train_dataset, test_dataset = random_split(
-        dataset, [train_size, test_size]
-    )
+    # ensure splitting uses CPU generator
+    gen = torch.Generator(device="cpu")
+    gen.manual_seed(42)
+    train_dataset, test_dataset = random_split(dataset, [train_size, test_size], generator=gen)
 
     if os.path.exists(os.path.join(dataset.dataset_dir, "train_indices.pkl")):
         with open(
@@ -150,6 +215,12 @@ if __name__ == "__main__":
             [ASSIST2009, ASSIST2015, Algebra2005, Statics2011]. \
             The default dataset is ASSIST2009."
     )
+    parser.add_argument(
+        "--subdata_dir",
+        type=str,
+        default=None,
+        help="Optional path to a subdata directory or a root that contains per-dataset subfolders."
+    )
     args = parser.parse_args()
 
-    main(args.model_name, args.dataset_name)
+    main(args.model_name, args.dataset_name, subdata_dir=args.subdata_dir)
