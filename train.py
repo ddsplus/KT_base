@@ -55,7 +55,9 @@ def main(model_name, dataset_name):
         dataset = Statics2011(seq_len)
 
     # determine target device for model training
-    if torch.cuda.is_available():
+    # SAKT builds an attention mask tensor on CPU inside forward,
+    # so keep it on CPU unless model implementation is updated.
+    if torch.cuda.is_available() and model_name != "sakt":
         target_device = torch.device("cuda:0")
     else:
         target_device = torch.device("cpu")
@@ -120,13 +122,17 @@ def main(model_name, dataset_name):
     # now move model to target device after splitting is complete
     model = model.to(target_device)
 
+    def collate_fn_on_device(batch):
+        # Ensure every tensor in a batch is on the same device as the model.
+        return tuple(t.to(target_device) for t in collate_fn(batch))
+
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_fn
+        collate_fn=collate_fn_on_device
     )
     test_loader = DataLoader(
         test_dataset, batch_size=test_size, shuffle=True,
-        collate_fn=collate_fn
+        collate_fn=collate_fn_on_device
     )
 
     if optimizer == "sgd":
